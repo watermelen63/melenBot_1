@@ -3,7 +3,12 @@ import os
 import asyncio
 import logging
 import ollama
+import json
+import random
 from dotenv import load_dotenv
+from datetime import datetime
+
+welcome_channel = {}
 
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -24,6 +29,12 @@ async def on_ready():
 
 with open("models.txt") as f:
 	MODELS = [line.strip() for line in f if line.strip()]
+
+with open("greet.json", "r", encoding="utf-8") as f:
+    GREETINGS = json.load(f)
+
+with open("jokes.json", "r", encoding="utf-8") as f:
+	JOKES = json.load(f)
 
 async def generate_reply(prompt: str) -> str:
 	memory.append({"role": "user", "content": prompt})
@@ -47,14 +58,22 @@ async def on_message(message):
 	if message.author == app.user:
 		return
 	
-	if "早安" in message:
-		await message.channel.send(f"hello{message.author.mention}\n")
-	
-	if "午安" in message:
-		await message.channel.send(f"hello{message.author.mention}\n")
+	now_hour = datetime.now().hour
 
-	if "晚安" in message:
-		await message.channel.send(f"# 晚安, {message.author.mention}\n祝你有個美好的一夜")
+	for key, replies in GREETINGS.items():
+		if key in message.content:
+			reply = random.choice(replies)
+			text = reply.format(user=message.author.mention)
+			await message.channel.send(text)
+			if key == "早安" and not (5 <= now_hour < 12):
+				await message.channel.send(random.choice(GREETINGS["morning_wrongVersion"]))
+			elif key == "午安" and not (12 <= now_hour < 18):
+				await message.channel.send(random.choice(GREETINGS["evening_wrongVersion"]))
+			elif key == "晚安" and not (18 <= now_hour < 24):
+				await message.channel.send(random.choice(GREETINGS["night_wrongVersion"]))
+			
+			return
+
 	
 	if app.user.mentioned_in(message):
 		prompt = message.content.replace(f"<@{app.user.id}>", '').strip()
@@ -73,15 +92,24 @@ async def on_message(message):
 		
 		await thinking_msg.edit(content = answer)
 
-#@app.event#歡迎訊息
-#async def on_member_join(member):
-#	welcome_channel_id = "theChannelID"
-#	welcome_channel = app.get_channel(welcome_channel_id)
-#	await welcome_channel.send(f"{member.mention} 歡迎你的加入")
+@app.event#歡迎訊息
+async def on_member_join(member: discord.Member):
+	welcome_channel_id = welcome_channel.get(member.guild.id)
+	if welcome_channel_id is None:
+		return
+	welcome_channel = member.guild.get_channel(welcome_channel_id)
+	if welcome_channel:
+		await welcome_channel.send(f"{member.mention} 歡迎你的加入")
 
-#@app.slash_command(name = "set_welcome", description = "設定歡迎頻道")
-#async def set_welcome(ctx: discord.ApplicationContext, channel: discord.TextChannel):
-#	await ctx.respond(f"已設定歡迎頻道為 {channel.mention}")
+@app.slash_command(name = "set_welcome", description = "設定歡迎頻道")
+async def set_welcome(ctx: discord.ApplicationContext, channel: discord.TextChannel):
+	welcome_channel[ctx.guild.id] = channel.id
+	await ctx.respond(f"已設定歡迎頻道為 {channel.mention}")
+
+@app.slash_command(name = "隨機笑話", description = "watermelen63機器人會講隨機笑話給你聽")
+async def ramdom_joke(ctx):
+	jokes = random.choice(JOKES["jokes"])
+	await ctx.respond(jokes)
 
 if __name__ == "__main__":
     app.run(DISCORD_TOKEN)
